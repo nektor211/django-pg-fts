@@ -15,28 +15,48 @@ __all__ = ('FTSRankCd', 'FTSRank', 'FTSRankDictionay', 'FTSRankCdDictionary', 'F
 
 
 class FTSRankE(Expression):
+	NORMALIZATION = (0, 1, 2, 4, 8, 16, 32)
 	sql_template = ("%(function)s(%(weights)s%(field_name)s, to_tsquery('%(dictionary)s',"
 		" %(place)s)%(normalization)s)")
 
-	def __init__(self, output_field, **kwargs):
+	def __init__(self, output_field, normalization = [], **kwargs):
 		super(FTSRankE, self).__init__(output_field=output_field)
-		if len(kwargs) != 1:
-			raise Exception('Only single rank filter is supported!')
 		self.kwargs = kwargs
+		self.normalization = normalization
+		[filter_, self.to_search] = self.kwargs.items()[0]
+		[self.column_name, self.srt_lookup] = filter_.split('__')
+		self._do_checks()
+		self.to_search = TSVectorBaseField._get_db_prep_lookup(self.srt_lookup, self.to_search)
+		self.normalization = '' if not normalization else ',' + '|'.join(['%d'%__ for __ in normalization])
+
+	def _do_checks(self):
+		#assert not self.weights or (len(self.weights) is 4 and all(map(
+		#	lambda x: isinstance(x, (int, float)),
+		#	self.weights
+		#))), 'weights must be of length 4 and type float or integer'
+		assert not self.normalization or all(map(
+			lambda x: (isinstance(x, int) and x in self.NORMALIZATION),
+			self.normalization
+		)), 'normalization must be in (%s)' % (
+			', '.join('%d' % i for i in self.NORMALIZATION))
+		assert len(self.kwargs) == 1, 'to many arguments for %s' % (
+			self.__class__.__name__)
+		if self.srt_lookup not in TSVectorBaseField.valid_lookups:
+			raise exceptions.FieldError(
+				"The '%s' isn't valid Lookup for %s" % (
+					self.srt_lookup, self.__class__.__name__))
+
 
 	def as_sql(self, compiler, connection):
-		[filter_, to_search] = self.kwargs.items()[0]
-		[column_name, search_type] = filter_.split('__')
-		to_search = TSVectorBaseField._get_db_prep_lookup(search_type, to_search)
 		params = {
 			'function':'ts_rank',
-			'field_name':column_name,
+			'field_name':self.column_name,
 			'dictionary':'english',#TODO parametrize
 			'place':'%s',
-			'normalization': '',
+			'normalization': self.normalization,
 			'weights': '',
 		}
-		sql_params = [to_search]
+		sql_params = [self.to_search]
 		return self.sql_template % params, sql_params
 
 
