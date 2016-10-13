@@ -19,21 +19,24 @@ class FTSRankE(Expression):
 	sql_template = ("%(function)s(%(weights)s%(field_name)s, to_tsquery('%(dictionary)s',"
 		" %(place)s)%(normalization)s)")
 
-	def __init__(self, output_field, normalization = [], **kwargs):
+	def __init__(self, output_field, normalization = [], weights=None, **kwargs):
 		super(FTSRankE, self).__init__(output_field=output_field)
 		self.kwargs = kwargs
 		self.normalization = normalization
+		self.weights = weights
+
 		[filter_, self.to_search] = self.kwargs.items()[0]
 		[self.column_name, self.srt_lookup] = filter_.split('__')
 		self._do_checks()
 		self.to_search = TSVectorBaseField._get_db_prep_lookup(self.srt_lookup, self.to_search)
-		self.normalization = '' if not normalization else ',' + '|'.join(['%d'%__ for __ in normalization])
+		self.normalization_param = '' if not normalization else ',' + '|'.join(['%d'%__ for __ in normalization])
+		self.weights_param = '' if not weights else "'{" + ', '.join('%.1f' % i for i in self.weights) + "}', "
 
 	def _do_checks(self):
-		#assert not self.weights or (len(self.weights) is 4 and all(map(
-		#	lambda x: isinstance(x, (int, float)),
-		#	self.weights
-		#))), 'weights must be of length 4 and type float or integer'
+		assert not self.weights or (len(self.weights) is 4 and all(map(
+			lambda x: isinstance(x, (int, float)),
+			self.weights
+		))), 'weights must be of length 4 and type float or integer'
 		assert not self.normalization or all(map(
 			lambda x: (isinstance(x, int) and x in self.NORMALIZATION),
 			self.normalization
@@ -53,8 +56,8 @@ class FTSRankE(Expression):
 			'field_name':self.column_name,
 			'dictionary':'english',#TODO parametrize
 			'place':'%s',
-			'normalization': self.normalization,
-			'weights': '',
+			'normalization': self.normalization_param,
+			'weights': self.weights_param,
 		}
 		sql_params = [self.to_search]
 		return self.sql_template % params, sql_params
