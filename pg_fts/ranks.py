@@ -9,8 +9,35 @@ from django.db.models.constants import LOOKUP_SEP
 from django.db.models.sql import aggregates
 from django.core import exceptions
 from pg_fts.fields import TSVectorBaseField
+from django.db.models import Expression
 
-__all__ = ('FTSRankCd', 'FTSRank', 'FTSRankDictionay', 'FTSRankCdDictionary')
+__all__ = ('FTSRankCd', 'FTSRank', 'FTSRankDictionay', 'FTSRankCdDictionary', 'FTSRankE')
+
+
+class FTSRankE(Expression):
+	sql_template = ("%(function)s(%(weights)s%(field_name)s, to_tsquery('%(dictionary)s',"
+		" %(place)s)%(normalization)s)")
+
+	def __init__(self, output_field, **kwargs):
+		super(FTSRankE, self).__init__(output_field=output_field)
+		if len(kwargs) != 1:
+			raise Exception('Only single rank filter is supported!')
+		self.kwargs = kwargs
+
+	def as_sql(self, compiler, connection):
+		[filter_, to_search] = self.kwargs.items()[0]
+		[column_name, search_type] = filter_.split('__')
+		to_search = TSVectorBaseField._get_db_prep_lookup(search_type, to_search)
+		params = {
+			'function':'ts_rank',
+			'field_name':column_name,
+			'dictionary':'english',#TODO parametrize
+			'place':'%s',
+			'normalization': '',
+			'weights': '',
+		}
+		sql_params = [to_search]
+		return self.sql_template % params, sql_params
 
 
 class AggregateRegister(aggregates.Aggregate):
